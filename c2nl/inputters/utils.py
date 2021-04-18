@@ -37,8 +37,9 @@ def process_examples(lang_id,
                      max_tgt_len,
                      code_tag_type,
                      uncase=False,
-                     test_split=True):
-    code_tokens = source.split()
+                     test_split=True,
+                     separator=' '):
+    code_tokens = source.split(separator)
     code_type = []
     if source_tag is not None:
         code_type = source_tag.split()
@@ -118,6 +119,30 @@ def load_data(args, filenames, max_examples=-1, dataset_name='java',
                                    args.code_tag_type,
                                    uncase=args.uncase,
                                    test_split=test_split)
+            if _ex is not None:
+                examples.append(_ex)
+
+        single_project_folders = \
+            [
+                'hibernate-orm',
+                'intellij-community', 'liferay-portal', 'gradle',
+                'hadoop-common', 'presto', 'wildfly',
+                'spring-framework', 'cassandra', 'elasticsearch'
+            ]
+        single_project_folders = \
+            [p + '_transformer' for p in single_project_folders]
+        if dataset_name in ['java_allamanis', 'human_dataset_input'] + single_project_folders:
+            _ex = process_examples(LANG_ID_MAP[DATA_LANG_MAP[dataset_name]],
+                                   src,
+                                   src_tag,
+                                   tgt,
+                                   args.max_src_len,
+                                   args.max_tgt_len,
+                                   args.code_tag_type,
+                                   uncase=args.uncase,
+                                   test_split=test_split,
+                                   # modification for using custom tokenization (e.g. Allamanis)
+                                   separator='&*separator*&')
             if _ex is not None:
                 examples.append(_ex)
 

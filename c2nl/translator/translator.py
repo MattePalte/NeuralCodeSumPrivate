@@ -182,7 +182,15 @@ class Translator(object):
                 dec_out = layer_wise_dec_out[-1]
                 # attn["std"] is a list (of size num_heads),
                 # so we pick the attention from first head
+                import pdb
+                #pdb.set_trace()
+                # MULTI HEAD
+                from copy import deepcopy
+                attn["std_all_heads"] = deepcopy(attn["std"])
+                # SINGLE HEAD
                 attn["std"] = attn["std"][0]
+
+                #pdb.set_trace()
                 if self.copy_attn:
                     _, copy_score, _ = model.copy_attn(dec_out,
                                                        memory_bank,
@@ -212,6 +220,9 @@ class Translator(object):
                     attn["copy"] = f.softmax(copy_score, dim=-1)
 
             # (b) Compute a vector of batch x beam word scores.
+
+            import pdb
+            #pdb.set_trace()
             if self.copy_attn:
                 out = copy_generator.forward(dec_out, attn["copy"], src_map)
                 out = out.squeeze(1)
@@ -225,12 +236,23 @@ class Translator(object):
                             out[b, bx].index_add_(0, fill_b,
                                                   out[b, bx].index_select(0, blank_b))
                             out[b, bx].index_fill_(0, blank_b, 1e-10)
+                if model_name == 'Transformer':
+                    # SINGLE HEAD
+                    transformer_attention = unbottle(attn["std"].squeeze(1))
+                    # MULTI HEAD
+                    transformer_attention_all_heads = \
+                        [unbottle(att_head.squeeze(1))
+                        for att_head in attn["std_all_heads"]]
+                    assert len(transformer_attention_all_heads[0]) == len(transformer_attention)
+                    #import pdb
+                    #pdb.set_trace()
                 beam_attn = unbottle(attn["copy"].squeeze(1))
             else:
                 out = generator.forward(dec_out.squeeze(1))
                 # beam x batch_size x tgt_vocab
                 out = unbottle(f.softmax(out, dim=1))
                 # beam x batch_size x tgt_vocab
+                transformer_attention = None
                 beam_attn = unbottle(attn["std"].squeeze(1))
 
             out = out.log()
@@ -238,8 +260,21 @@ class Translator(object):
             # (c) Advance each beam.
             for j, b in enumerate(beam):
                 if not b.done:
+                    # MULTI HEAD
+                    transformer_attention_all_heads_data = [
+                        att_head.data[:, j, :memory_lengths[j]]
+                        for att_head in transformer_attention_all_heads
+                    ]
+                    transformer_attention_data = transformer_attention.data[:, j, :memory_lengths[j]]
+                    assert transformer_attention_data[0][0] == transformer_attention_all_heads_data[0][0][0]
+                    #import pdb
+                    #pdb.set_trace()
                     b.advance(out[:, j],
-                              beam_attn.data[:, j, :memory_lengths[j]])
+                              beam_attn.data[:, j, :memory_lengths[j]],
+                              # NEW STUDY EDIT
+                              transformer_attention_data,
+                              transformer_attention_all_heads_data # MULTI HEAD
+                              )
                 if model_name != 'Transformer':
                     if isinstance(dec_states, tuple):  # for split decoder
                         dec_states[0].beam_update(j, b.get_current_origin(), beam_size)
@@ -254,16 +289,26 @@ class Translator(object):
     def _from_beam(self, beam):
         ret = {"predictions": [],
                "scores": [],
-               "attention": []}
+               "attention": [],
+               "attention_transformer": [],
+               "attention_transformer_all_head": []} # MULTI HEAD
         for b in beam:
             n_best = self.n_best
             scores, ks = b.sort_finished(minimum=n_best)
-            hyps, attn = [], []
+            hyps, attn, attn_transformer = [], [], []
+            attn_transformer_all_head = [] # MULTI HEAD
             for i, (times, k) in enumerate(ks[:n_best]):
-                hyp, att = b.get_hyp(times, k)
+                # NEW STUDY EDIT
+                hyp, att, att_transformer, att_transformer_all_head = b.get_hyp_with_transformer_attention(times, k)
+                # OLD
+                # hyp, att = b.get_hyp(times, k)
                 hyps.append(hyp)
                 attn.append(att)
+                attn_transformer.append(att_transformer)
+                attn_transformer_all_head.append(att_transformer_all_head) # MULTI HEAD
             ret["predictions"].append(hyps)
             ret["scores"].append(scores)
             ret["attention"].append(attn)
+            ret["attention_transformer"].append(attn_transformer)
+            ret["attention_transformer_all_head"].append(attn_transformer_all_head) # MULTI HEAD
         return ret

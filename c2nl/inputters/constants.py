@@ -38,6 +38,18 @@ AST_TYPE_MAP = {
 
 DATA_LANG_MAP = {
     'java': 'java',
+    'java_allamanis': 'java',
+    'human_dataset_input': 'java',
+    'hibernate-orm_transformer': 'java',
+    'intellij-community_transformer': 'java',
+    'liferay-portal_transformer': 'java',
+    'gradle_transformer': 'java',
+    'hadoop-common_transformer': 'java',
+    'presto_transformer': 'java',
+    'wildfly_transformer': 'java',
+    'spring-framework_transformer': 'java',
+    'cassandra_transformer': 'java',
+    'elasticsearch_transformer': 'java',
     'python': 'python'
 }
 

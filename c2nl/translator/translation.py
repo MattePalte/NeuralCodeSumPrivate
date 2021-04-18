@@ -51,8 +51,16 @@ class TranslationBuilder(object):
         preds = translation_batch["predictions"]
         pred_score = translation_batch["scores"]
         attn = translation_batch["attention"]
+        attn_transformer = translation_batch["attention_transformer"]
+        attn_transformer_all_head = translation_batch["attention_transformer_all_head"]
+
+        #import pdb
+        #pdb.set_trace()
 
         translations = []
+        attentions = []
+        attentions_transformer = []
+        attentions_transformer_all_head = [] # MULTI HEAD
         for b in range(batch_size):
             src_vocab = src_vocabs[b] if src_vocabs else None
             pred_sents = [self._build_target_tokens(
@@ -62,8 +70,28 @@ class TranslationBuilder(object):
             translation = Translation(targets[b], pred_sents,
                                       attn[b], pred_score[b])
             translations.append(translation)
+            attentions.append(attn[b])
+            attentions_transformer.append(attn_transformer[b])
 
-        return translations
+            all_heads_current_sample = [
+                attn_transformer_all_head[b][0][number_head]
+                for number_head in range(8)
+            ]
+
+            attentions_transformer_all_head.append([all_heads_current_sample])
+
+
+        print(len(attentions_transformer))
+        print(len(attentions_transformer_all_head))
+
+        #import pdb
+        #pdb.set_trace()
+        import torch
+        # last dimension is for the head
+        assert torch.equal(attentions_transformer[2][0], attentions_transformer_all_head[2][0][0])
+
+
+        return translations, attentions, attentions_transformer, attn_transformer_all_head
 
 
 class Translation(object):

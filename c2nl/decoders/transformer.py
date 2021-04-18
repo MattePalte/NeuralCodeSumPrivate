@@ -203,7 +203,7 @@ class TransformerDecoder(DecoderBase):
             new_layer_wise_coverage.append(coverage)
 
         attns = dict()
-        attns["std"] = std_attentions[-1]
+        attns["std"] = std_attentions[-1] # report attention of only the last layer of the transformer
         attns["coverage"] = None
         if self._coverage:
             attns["coverage"] = new_layer_wise_coverage

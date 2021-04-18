@@ -46,6 +46,9 @@ class Beam(object):
 
         # The attentions (matrix) for each time.
         self.attn = []
+        self.attn_transformer = [] # NEW STUDY EDIT - SINGLE HEAD
+        self.attn_transformer_all_head = [] # NEW STUDY EDIT - MULTI HEAD
+
 
         # Time and k pair for finished.
         self.finished = []
@@ -71,7 +74,10 @@ class Beam(object):
         "Get the backpointers for the current timestep."
         return self.prev_ks[-1]
 
-    def advance(self, word_probs, attn_out):
+    def advance(self, word_probs, attn_out,
+                attn_transformer=None,
+                transformer_attention_all_heads_data=None # MULTI HEAD
+                ): # NEW STUDY EDIT
         """
         Given prob over words for every last beam `wordLk` and attention
         `attn_out`: Compute and update the beam search.
@@ -132,6 +138,27 @@ class Beam(object):
         self.prev_ks.append(prev_k)
         self.next_ys.append((best_scores_id - prev_k * num_words))
         self.attn.append(attn_out.index_select(0, prev_k))
+        # NEW STUDY EDIT
+        if attn_transformer is not None:
+            # SINGLE HEAD
+            transformer_attention_indexed = attn_transformer.index_select(0, prev_k)
+            self.attn_transformer.append(transformer_attention_indexed)
+        if transformer_attention_all_heads_data is not None:
+            #import pdb
+            #pdb.set_trace()
+            # MULTI HEAD
+            transformer_attention_all_heads_data_indexed = [
+                attn_head.index_select(0, prev_k)
+                for attn_head in transformer_attention_all_heads_data
+            ]
+            self.attn_transformer_all_head.append(transformer_attention_all_heads_data_indexed)
+
+            assert len(self.attn_transformer_all_head) == len(self.attn_transformer)
+            assert torch.equal(transformer_attention_all_heads_data_indexed[0][0][0], transformer_attention_indexed[0][0])
+            assert torch.equal(transformer_attention_all_heads_data_indexed[0][1][2], transformer_attention_indexed[1][2])
+
+            #import pdb
+            #pdb.set_trace()
         self.global_scorer.update_global_state(self)
 
         for i in range(self.next_ys[-1].size(0)):
@@ -174,6 +201,39 @@ class Beam(object):
             attn.append(self.attn[j][k])
             k = self.prev_ks[j][k]
         return hyp[::-1], torch.stack(attn[::-1])
+
+    def get_hyp_with_transformer_attention(self, timestep, k):
+        """
+        Walk back to construct the full hypothesis.
+        """
+        hyp, attn, attn_transformer = [], [], []
+        # MULTI HEAD - create 8 empty lists - one for each head
+        N_HEADS = len(self.attn_transformer_all_head[0])
+        attn_transformer_all_head = [[] for i in range(N_HEADS)]
+        for j in range(len(self.prev_ks[:timestep]) - 1, -1, -1):
+            hyp.append(self.next_ys[j + 1][k])
+            attn.append(self.attn[j][k])
+            # NEW STUDY EDIT
+            attn_transformer.append(self.attn_transformer[j][k])
+            # MULTI HEAD -
+            for i in range(N_HEADS):
+                if i == 0:
+                    assert torch.equal(self.attn_transformer[j][k], self.attn_transformer_all_head[j][i][k])
+                attn_transformer_all_head[i].append(self.attn_transformer_all_head[j][i][k])
+
+            k = self.prev_ks[j][k]
+        #import pdb
+        #pdb.set_trace()
+
+        # MULTI HEAD
+        # this is a list with 8 attention object, each object has the same
+        # shape and appearance of the copy or regular head number 0
+        stacked_attention_all_heads = [
+            torch.stack(attn_head[::-1])
+            for attn_head in attn_transformer_all_head
+        ]
+
+        return hyp[::-1], torch.stack(attn[::-1]), torch.stack(attn_transformer[::-1]), stacked_attention_all_heads
 
 
 class GNMTGlobalScorer(object):
